@@ -1,11 +1,13 @@
 from Readdrawmaze import read_maze, find_pos, display_maze, visualize_maze_progress
 from BFS import bfs
 from Astar import a_star_manhattan
-
+from GenOpenMaze import generate_open_maze
+from GenUMaze import generate_U_maze
 
 def main():
     # 1. Cấu hình file map
-    map_file = "maze_1.txt"  # Đảm bảo file này tồn tại cùng thư mục
+    # Hiện tại phải chỉnh tên file trong code mới chọn được muốn giải loại maze nào
+    map_file = "U_maze.txt"  # Đảm bảo file này tồn tại cùng thư mục
 
     # 2. Đọc dữ liệu
     maze = read_maze(map_file)
