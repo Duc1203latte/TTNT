@@ -12,12 +12,12 @@ def a_star_manhattan(maze, start, goal):
     Thuật toán A* với heuristic Manhattan.
     Trả về: (path, visited_order)
     """
-    open_list = []
+    open_list = [] #Danh sách các ô chờ xét
     # Priority Queue lưu tuple: (f_score, (x, y))
     heappush(open_list, (0, start))
 
-    came_from = {}
-    g_score = {start: 0}
+    came_from = {} #Truy vết đường đi
+    g_score = {start: 0} #Chi phí thực tế đi từ start đến đây
     visited_order = []
 
     while open_list:
@@ -37,13 +37,13 @@ def a_star_manhattan(maze, start, goal):
         x, y = current
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nx, ny = x + dx, y + dy
-
+            #Kiểm tra biên và tường
             if 0 <= nx < len(maze) and 0 <= ny < len(maze[0]) and maze[nx][ny] != 'X':
-                tentative_g = g_score[current] + 1
+                tentative_g = g_score[current] + 1 #Gi thực tế mới
 
                 if (nx, ny) not in g_score or tentative_g < g_score[(nx, ny)]:
                     g_score[(nx, ny)] = tentative_g
-                    f = tentative_g + heuristic_manhattan((nx, ny), goal)
+                    f = tentative_g + heuristic_manhattan((nx, ny), goal) #Tính F=G+H
                     heappush(open_list, (f, (nx, ny)))
                     came_from[(nx, ny)] = current
 
