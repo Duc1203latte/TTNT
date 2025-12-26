@@ -1,9 +1,9 @@
 import pygame
 import pygame_gui
-from pygame_gui.elements import UIButton, UITextEntryLine, UIDropDownMenu, UITextBox, UIPanel
+from pygame_gui.elements import UIButton, UITextEntryLine, UIDropDownMenu, UITextBox, UIPanel, UIScrollingContainer, UIImage
 from pygame_gui.windows import UIMessageWindow
 
-
+from datetime import datetime
 import sys
 sys.setrecursionlimit(20000)
 #Tăng giới hạn phòng trường hợp đệ quy quá lớn
@@ -54,6 +54,16 @@ class MazeApp:
         self.drawn_visited = []
         self.drawn_path = []
 
+        # Lưu meta map + lịch sử
+        self.current_maze_type = ""
+        self.current_row = 0
+        self.current_col = 0
+
+        self.history = [] #list[dict]
+        self.history_panel = None
+        self.history_scroll = None
+        self.history_close_btn = None
+
         #Khởi tạo giao diện
         self.setup_ui()
 
@@ -100,6 +110,11 @@ class MazeApp:
         # 3. Panel kết quả bên dưới (Màu hồng nhạt)
         result_panel = UIPanel(relative_rect=pygame.Rect(20, 550, 600, 80),
                                starting_height=1, manager=self.manager)
+
+        # nút xem lịch sử
+        self.btn_history = UIButton(pygame.Rect(control_x, 480, 260, 45), "LỊCH SỬ", self.manager)
+        result_panel = UIPanel(relative_rect=pygame.Rect(20, 550, 600, 80),
+                               starting_height=1, manager=self.manager)
         self.result_box = UITextBox("Kết quả sẽ hiện ở đây...", pygame.Rect(0, 0, 600, 80),
                                     manager=self.manager, container=result_panel)
 
@@ -130,6 +145,15 @@ class MazeApp:
             self.result_box.set_text("Kích thước phải là số nguyên")
             return
         maze_type = self.get_dropdown_value(self.maze_type_dropdown)
+        self.current_maze_type = maze_type
+        self.current_rows = rows
+        self.current_cols = cols
+
+        # lưu mê cung để lưu vào lịch sử
+        self.current_maze_type = maze_type
+        self.current_row = rows
+        self.current_col = cols
+
         self.current_maze = None #Reset map cũ
 
         status_msg = f"Đang tạo {maze_type} ({rows}x{cols})..."
@@ -187,6 +211,9 @@ class MazeApp:
                       f"Độ dài: {len(path)} bước | Xét duyệt: {len(visited)} ô | Thời gian: {time_taken}ms")
         self.result_box.set_text(result_msg)
 
+        # lưu lịch sử
+        self.add_history_entry(algo, visited, path, time_taken)
+
         if visited:
             self.viz_generator = self.create_visualization_generator(visited, path)
             self.drawn_visited = []
@@ -225,6 +252,170 @@ class MazeApp:
                     self.last_viz_update = current_time
                 except StopIteration:
                     self.viz_generator = None
+
+    def render_maze_snapshot(self, visited=None, path=None, thumb_size=(220, 160)):
+        """Vẽ mê cung + visited + path lên surface offscreen rồi scale thành thumbnail."""
+        surf = pygame.Surface((MAZE_AREA_RECT.width, MAZE_AREA_RECT.height))
+        surf.fill(COLOR_MAZE_BG)
+
+        if not self.current_maze:
+            return pygame.transform.smoothscale(surf, thumb_size)
+
+        rows = len(self.current_maze)
+        cols = len(self.current_maze[0])
+
+        offset_x = (MAZE_AREA_RECT.width - cols * CELL_SIZE) // 2
+        offset_y = (MAZE_AREA_RECT.height - rows * CELL_SIZE) // 2
+
+        # nền mê cung
+        for r in range(rows):
+            for c in range(cols):
+                cell_val = self.current_maze[r][c]
+                color = COLOR_WALL if cell_val == 'X' else COLOR_PATH
+                rect = pygame.Rect(offset_x + c * CELL_SIZE, offset_y + r * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                pygame.draw.rect(surf, color, rect)
+
+        # visited
+        if visited:
+            for r, c in visited:
+                rect = pygame.Rect(offset_x + c * CELL_SIZE, offset_y + r * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                pygame.draw.rect(surf, COLOR_VISITED, rect)
+
+        # path
+        if path:
+            for r, c in path:
+                rect = pygame.Rect(offset_x + c * CELL_SIZE, offset_y + r * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                pygame.draw.rect(surf, COLOR_FINAL_PATH, rect)
+
+        # S/G
+        if self.start_pos:
+            r, c = self.start_pos
+            rect = pygame.Rect(offset_x + c * CELL_SIZE, offset_y + r * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+            pygame.draw.rect(surf, COLOR_START, rect)
+
+        if self.goal_pos:
+            r, c = self.goal_pos
+            rect = pygame.Rect(offset_x + c * CELL_SIZE, offset_y + r * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+            pygame.draw.rect(surf, COLOR_GOAL, rect)
+
+        return pygame.transform.smoothscale(surf, thumb_size)
+
+    def add_history_entry(self, algo, visited, path, time_taken_ms):
+        thumb = self.render_maze_snapshot(visited=visited, path=path, thumb_size=(220, 160))
+
+        entry = {
+            "time": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "maze_type": self.current_maze_type,
+            "rows": self.current_rows,
+            "cols": self.current_cols,
+            "algo": algo,
+            "visited_count": len(visited) if visited else 0,
+            "path_len": len(path) if path else 0,
+            "time_ms": time_taken_ms,
+            "thumb": thumb
+        }
+
+        self.history.append(entry)
+
+        # Giới hạn lịch sử để tránh nặng RAM
+        if len(self.history) > 30:
+            self.history = self.history[-30:]
+
+        # Nếu đang mở trang lịch sử thì refresh
+        if self.history_panel is not None:
+            self.build_history_page()
+
+    def toggle_history_page(self):
+        if self.history_panel is not None:
+            self.history_panel.kill()
+            self.history_panel = None
+            self.history_scroll = None
+            self.history_close_btn = None
+            return self.build_history_page()
+
+    def build_history_page(self):
+        # refresh: xoá cũ dựng mới
+        if self.history_panel is not None:
+            self.history_panel.kill()
+
+        self.history_panel = UIPanel(
+            relative_rect=pygame.Rect(60, 50, 830, 560),
+            starting_height=3,
+            manager=self.manager
+        )
+
+        UITextBox(
+            "<b>LỊCH SỬ CHẠY THUẬT TOÁN</b>",
+            pygame.Rect(15, 10, 650, 35),
+            self.manager,
+            container=self.history_panel
+        )
+
+        self.history_close_btn = UIButton(
+            pygame.Rect(740, 10, 75, 35),
+            "ĐÓNG",
+            self.manager,
+            container=self.history_panel
+        )
+
+        self.history_scroll = UIScrollingContainer(
+            relative_rect=pygame.Rect(15, 55, 800, 490),
+            manager=self.manager,
+            container=self.history_panel
+        )
+
+        scroll_container = self.history_scroll.scrollable_container
+
+        if len(self.history) == 0:
+            UITextBox(
+                "Chưa có lần chạy nào. Hãy tạo map và chạy thuật toán trước!",
+                pygame.Rect(0, 0, 760, 60),
+                self.manager,
+                container=scroll_container
+            )
+            self.history_scroll.set_scrollable_area_dimensions((780, 80))
+            return
+
+        item_h = 190
+        content_w = 780
+        content_h = len(self.history) * item_h + 10
+
+        y = 0
+        # mới nhất lên trước
+        for i, entry in enumerate(reversed(self.history), start=1):
+            item_panel = UIPanel(
+                relative_rect=pygame.Rect(0, y, content_w, item_h - 10),
+                starting_height=1,
+                manager=self.manager,
+                container=scroll_container
+            )
+
+            UIImage(
+                relative_rect=pygame.Rect(10, 10, entry["thumb"].get_width(), entry["thumb"].get_height()),
+                image_surface=entry["thumb"],
+                manager=self.manager,
+                container=item_panel
+            )
+
+            info_html = (
+                f"<b>#{i}</b> | <b>{entry['algo']}</b><br>"
+                f"Thời gian chạy: <b>{entry['time_ms']} ms</b><br>"
+                f"Ngày giờ: {entry['time']}<br>"
+                f"Map: {entry['maze_type']} ({entry['rows']}x{entry['cols']})<br>"
+                f"Ô duyệt: <b>{entry['visited_count']}</b> | "
+                f"Ô đường đi: <b>{entry['path_len']}</b>"
+            )
+
+            UITextBox(
+                info_html,
+                pygame.Rect(245, 10, 520, 160),
+                self.manager,
+                container=item_panel
+            )
+
+            y += item_h
+
+        self.history_scroll.set_scrollable_area_dimensions((content_w, content_h))
 
     def draw_maze_area(self):
         """Vẽ mê cung và các bước visualization"""
@@ -293,6 +484,10 @@ class MazeApp:
                         self.handle_generate_maze()
                     elif event.ui_element == self.btn_run:
                         self.handle_run_algorithm()
+                    elif event.ui_element == self.btn_history:
+                        self.toggle_history_page()
+                    elif self.history_close_btn is not None and event.ui_element == self.history_close_btn:
+                        self.toggle_history_page()
 
             #Cập nhật logic và vẽ
             self.update(time_delta)
