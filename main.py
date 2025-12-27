@@ -331,8 +331,8 @@ class MazeApp:
             self.history_panel = None
             self.history_scroll = None
             self.history_close_btn = None
-            return self.build_history_page()
-
+            return
+        self.build_history_page()
     def build_history_page(self):
         # refresh: xoá cũ dựng mới
         if self.history_panel is not None:
